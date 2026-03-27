@@ -1,0 +1,8 @@
+{
+  "name": "mc-structure-builder",
+  "version": "1.0.0",
+  "description": "Web to Minecraft Structure Exporter",
+  "dependencies": {
+    "prismarine-nbt": "^2.4.0"
+  }
+}
