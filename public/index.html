@@ -5,7 +5,9 @@
     <title>Minecraft Color-Coded Builder</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: sans-serif; }
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 8px; width: 250px; }
+        /* Notice how I added pointer-events logic here so clicking the UI doesn't place a block! */
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 8px; width: 250px; z-index: 10; pointer-events: none; }
+        #ui select, #ui button, #ui label { pointer-events: auto; }
         select, button { width: 100%; padding: 10px; margin-top: 10px; font-weight: bold; cursor: pointer; border-radius: 4px; border: none; }
         select { background: #fff; color: #000; }
         button { background: #3e8e41; color: white; }
@@ -18,7 +20,7 @@
         <h3>Voxel Builder</h3>
         <p><b>Left Click:</b> Place Block</p>
         <p><b>Shift + Left Click:</b> Delete</p>
-        <p><b>Right Click & Drag:</b> Rotate Camera</p>
+        <p><b>Drag:</b> Rotate Camera</p>
         
         <label for="blockSelect">Choose Block:</label>
         <select id="blockSelect">
@@ -41,3 +43,173 @@
                 "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Setup Scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // Sky blue
+        
+        // Fix aspect ratio for all devices
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        camera.position.set(10, 15, 25); // Pulled camera back so you can see the whole grid
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 2. Camera Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(10, 0, 10); // CRITICAL FIX: Forces the camera to look at the center of the grid
+        controls.update();
+        
+        // 3. Grid & Lighting
+        const gridHelper = new THREE.GridHelper(20, 20, 0x000000, 0x000000);
+        gridHelper.material.opacity = 0.2;
+        gridHelper.material.transparent = true;
+        gridHelper.position.set(10, -0.5, 10); // Placed slightly lower to align math perfectly
+        scene.add(gridHelper);
+        
+        scene.add(new THREE.AmbientLight(0x808080));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 7.5);
+        scene.add(dirLight);
+
+        // Invisible Floor (Stops you from clicking into the void)
+        const planeGeo = new THREE.PlaneGeometry(20, 20);
+        planeGeo.rotateX(-Math.PI / 2);
+        const planeMat = new THREE.MeshBasicMaterial({ visible: false });
+        const floorPlane = new THREE.Mesh(planeGeo, planeMat);
+        floorPlane.position.set(10, -0.5, 10);
+        scene.add(floorPlane);
+
+        // 4. Preview Box (Shows a red outline of where you are aiming)
+        const rollOverGeo = new THREE.BoxGeometry(1, 1, 1);
+        const rollOverMat = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true });
+        const rollOverMesh = new THREE.Mesh(rollOverGeo, rollOverMat);
+        scene.add(rollOverMesh);
+
+        // 5. Interaction Math
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const objects = [floorPlane]; 
+        let blockData = []; 
+
+        // Update the red preview box when moving the mouse
+        window.addEventListener('pointermove', (event) => {
+            mouse.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(objects, false);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                // Move the red box to the targeted spot
+                const normalObj = new THREE.Vector3().copy(intersect.face.normal);
+                rollOverMesh.position.copy(intersect.point).add(normalObj);
+                rollOverMesh.position.floor().addScalar(0.5);
+                rollOverMesh.visible = true;
+            } else {
+                rollOverMesh.visible = false;
+            }
+        });
+
+        // Smart clicking logic (prevents dragging from placing blocks accidentally)
+        let startX = 0, startY = 0;
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return; // Only track left clicks
+            startX = e.clientX; 
+            startY = e.clientY;
+        });
+
+        renderer.domElement.addEventListener('pointerup', (event) => {
+            if (event.button !== 0) return; 
+            
+            // If the mouse moved while clicking, you were dragging the camera. Abort placement!
+            if (Math.abs(event.clientX - startX) > 5 || Math.abs(event.clientY - startY) > 5) return; 
+
+            mouse.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(objects, false);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                
+                if (event.shiftKey) {
+                    // Delete Block
+                    if (intersect.object !== floorPlane) {
+                        scene.remove(intersect.object);
+                        objects.splice(objects.indexOf(intersect.object), 1);
+                        blockData = blockData.filter(b => b.mesh !== intersect.object);
+                        rollOverMesh.visible = false; 
+                    }
+                } else {
+                    // Place Block
+                    const selectEl = document.getElementById('blockSelect');
+                    const blockId = selectEl.value;
+                    const blockColor = selectEl.options[selectEl.selectedIndex].dataset.color;
+
+                    const voxelGeo = new THREE.BoxGeometry(1, 1, 1);
+                    const voxelMat = new THREE.MeshLambertMaterial({ color: blockColor });
+                    const voxel = new THREE.Mesh(voxelGeo, voxelMat);
+                    
+                    const normalObj = new THREE.Vector3().copy(intersect.face.normal);
+                    voxel.position.copy(intersect.point).add(normalObj).floor().addScalar(0.5);
+                    scene.add(voxel);
+                    objects.push(voxel);
+
+                    blockData.push({
+                        mesh: voxel,
+                        x: Math.floor(voxel.position.x),
+                        y: Math.floor(voxel.position.y),
+                        z: Math.floor(voxel.position.z),
+                        id: blockId // Save the Minecraft name for Vercel
+                    });
+                }
+            }
+        });
+
+        // Keep it looking nice if you resize the browser
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 6. Export to Vercel Backend
+        document.getElementById('exportBtn').addEventListener('click', async () => {
+            if (blockData.length === 0) return alert("Place some blocks first!");
+
+            // Send standard coordinates to the backend
+            const payload = {
+                size: [20, 20, 20], 
+                blocks: blockData.map(b => ({ x: b.x, y: b.y, z: b.z, id: b.id }))
+            };
+
+            const response = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) return alert("Failed to export. Make sure your api/export.js file is pushed!");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "my_build.mcstructure";
+            a.click();
+        });
+
+        // Let the 3D engine run
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
