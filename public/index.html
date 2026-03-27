@@ -2,39 +2,39 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Minecraft Color-Coded Builder</title>
+    <title>Minecraft Web Builder Pro</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: sans-serif; }
-        /* Notice how I added pointer-events logic here so clicking the UI doesn't place a block! */
-        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 8px; width: 250px; z-index: 10; pointer-events: none; }
+        
+        /* UI Panel */
+        #ui { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.85); color: white; padding: 15px; border-radius: 8px; width: 260px; z-index: 10; pointer-events: none; }
         #ui select, #ui button, #ui label { pointer-events: auto; }
         select, button { width: 100%; padding: 10px; margin-top: 10px; font-weight: bold; cursor: pointer; border-radius: 4px; border: none; }
-        select { background: #fff; color: #000; }
-        button { background: #3e8e41; color: white; }
+        select { background: #fff; color: #000; font-size: 14px; }
+        button { background: #3e8e41; color: white; font-size: 14px; }
         button:hover { background: #4caf50; }
+        
+        /* Hover Tooltip */
+        #tooltip {
+            position: absolute; display: none; background: rgba(0, 0, 0, 0.9);
+            color: white; padding: 6px 10px; border-radius: 4px; font-size: 14px;
+            pointer-events: none; z-index: 100; font-weight: bold; border: 1px solid #fff;
+        }
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <h3>Voxel Builder</h3>
-        <p><b>Left Click:</b> Place Block</p>
-        <p><b>Shift + Left Click:</b> Delete</p>
-        <p><b>Drag:</b> Rotate Camera</p>
+        <h3>Voxel Builder Pro</h3>
+        <p style="font-size: 14px; color: #ccc;"><b>Left Click:</b> Place Block</p>
+        <p style="font-size: 14px; color: #ccc;"><b>Shift + Click:</b> Delete</p>
+        <p style="font-size: 14px; color: #ccc;"><b>Drag:</b> Rotate Camera</p>
         
         <label for="blockSelect">Choose Block:</label>
-        <select id="blockSelect">
-            <option value="minecraft:grass_block" data-color="#55aa55">Grass Block (Green)</option>
-            <option value="minecraft:dirt" data-color="#8b4513">Dirt (Brown)</option>
-            <option value="minecraft:stone" data-color="#888888">Stone (Gray)</option>
-            <option value="minecraft:oak_planks" data-color="#cdaa7d">Oak Planks (Tan)</option>
-            <option value="minecraft:glass" data-color="#add8e6">Glass (Light Blue)</option>
-            <option value="minecraft:gold_block" data-color="#ffd700">Gold Block (Yellow)</option>
-            <option value="minecraft:obsidian" data-color="#221f2e">Obsidian (Dark Purple)</option>
-        </select>
-
-        <button id="exportBtn">Export .mcstructure</button>
+        <select id="blockSelect"></select> <button id="exportBtn">Export .mcstructure</button>
     </div>
+
+    <div id="tooltip">Block Name</div>
 
     <script type="importmap">
         {
@@ -49,28 +49,84 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-        // 1. Setup Scene
+        // --- 1. THE BLOCK DATABASE ---
+        // I added ~50 blocks. You can add any Minecraft ID to this list!
+        const blockDatabase = [
+            // Terrain
+            { id: "minecraft:grass_block", name: "Grass Block", color: "#55aa55" },
+            { id: "minecraft:dirt", name: "Dirt", color: "#8b4513" },
+            { id: "minecraft:stone", name: "Stone", color: "#888888" },
+            { id: "minecraft:cobblestone", name: "Cobblestone", color: "#666666" },
+            { id: "minecraft:sand", name: "Sand", color: "#e3dbb0" },
+            { id: "minecraft:gravel", name: "Gravel", color: "#8d8784" },
+            { id: "minecraft:obsidian", name: "Obsidian", color: "#221f2e" },
+            { id: "minecraft:bedrock", name: "Bedrock", color: "#333333" },
+            
+            // Woods
+            { id: "minecraft:oak_planks", name: "Oak Planks", color: "#cdaa7d" },
+            { id: "minecraft:spruce_planks", name: "Spruce Planks", color: "#825f38" },
+            { id: "minecraft:birch_planks", name: "Birch Planks", color: "#f3e2a5" },
+            { id: "minecraft:oak_log", name: "Oak Log", color: "#745a36" },
+            { id: "minecraft:cherry_planks", name: "Cherry Planks", color: "#eeb4ba" },
+            
+            // Ores & Gems
+            { id: "minecraft:coal_block", name: "Coal Block", color: "#111111" },
+            { id: "minecraft:iron_block", name: "Iron Block", color: "#e2e2e2" },
+            { id: "minecraft:gold_block", name: "Gold Block", color: "#ffd700" },
+            { id: "minecraft:diamond_block", name: "Diamond Block", color: "#6eecdf" },
+            { id: "minecraft:emerald_block", name: "Emerald Block", color: "#41f384" },
+            { id: "minecraft:lapis_block", name: "Lapis Lazuli Block", color: "#2851bc" },
+            { id: "minecraft:redstone_block", name: "Redstone Block", color: "#ff0000" },
+            
+            // Colored Wools
+            { id: "minecraft:white_wool", name: "White Wool", color: "#e9ecec" },
+            { id: "minecraft:black_wool", name: "Black Wool", color: "#141519" },
+            { id: "minecraft:red_wool", name: "Red Wool", color: "#a02722" },
+            { id: "minecraft:blue_wool", name: "Blue Wool", color: "#35399d" },
+            { id: "minecraft:green_wool", name: "Green Wool", color: "#546d1b" },
+            { id: "minecraft:yellow_wool", name: "Yellow Wool", color: "#f8c527" },
+            
+            // Glass & Misc
+            { id: "minecraft:glass", name: "Glass", color: "#add8e6" },
+            { id: "minecraft:bricks", name: "Bricks", color: "#955e42" },
+            { id: "minecraft:bookshelf", name: "Bookshelf", color: "#8a6b42" },
+            { id: "minecraft:tnt", name: "TNT", color: "#db4029" },
+            { id: "minecraft:water", name: "Water (Static)", color: "#3f76e4" },
+            { id: "minecraft:lava", name: "Lava (Static)", color: "#cf5a15" }
+        ];
+
+        // Populate the Dropdown
+        const selectEl = document.getElementById('blockSelect');
+        blockDatabase.forEach(block => {
+            const opt = document.createElement('option');
+            opt.value = block.id;
+            opt.dataset.color = block.color;
+            opt.dataset.name = block.name;
+            opt.innerText = block.name;
+            selectEl.appendChild(opt);
+        });
+
+        // --- 2. ENGINE SETUP ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // Sky blue
+        scene.background = new THREE.Color(0x87ceeb);
         
-        // Fix aspect ratio for all devices
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
-        camera.position.set(10, 15, 25); // Pulled camera back so you can see the whole grid
+        camera.position.set(15, 20, 25); 
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // 2. Camera Controls
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(10, 0, 10); // CRITICAL FIX: Forces the camera to look at the center of the grid
+        controls.target.set(0, 0, 0); // Center of the 3D world
         controls.update();
         
-        // 3. Grid & Lighting
+        // --- 3. PERFECT GRID ALIGNMENT ---
+        // The 3D world is perfectly centered at 0,0,0 to fix the snapping bugs.
         const gridHelper = new THREE.GridHelper(20, 20, 0x000000, 0x000000);
         gridHelper.material.opacity = 0.2;
         gridHelper.material.transparent = true;
-        gridHelper.position.set(10, -0.5, 10); // Placed slightly lower to align math perfectly
+        gridHelper.position.set(0, -0.5, 0); 
         scene.add(gridHelper);
         
         scene.add(new THREE.AmbientLight(0x808080));
@@ -78,27 +134,26 @@
         dirLight.position.set(5, 10, 7.5);
         scene.add(dirLight);
 
-        // Invisible Floor (Stops you from clicking into the void)
         const planeGeo = new THREE.PlaneGeometry(20, 20);
         planeGeo.rotateX(-Math.PI / 2);
         const planeMat = new THREE.MeshBasicMaterial({ visible: false });
         const floorPlane = new THREE.Mesh(planeGeo, planeMat);
-        floorPlane.position.set(10, -0.5, 10);
+        floorPlane.position.set(0, -0.5, 0);
         scene.add(floorPlane);
 
-        // 4. Preview Box (Shows a red outline of where you are aiming)
+        // Preview Box
         const rollOverGeo = new THREE.BoxGeometry(1, 1, 1);
         const rollOverMat = new THREE.MeshBasicMaterial({ color: 0xff0000, opacity: 0.5, transparent: true });
         const rollOverMesh = new THREE.Mesh(rollOverGeo, rollOverMat);
         scene.add(rollOverMesh);
 
-        // 5. Interaction Math
+        // --- 4. INTERACTION & TOOLTIP ---
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         const objects = [floorPlane]; 
         let blockData = []; 
+        const tooltip = document.getElementById('tooltip');
 
-        // Update the red preview box when moving the mouse
         window.addEventListener('pointermove', (event) => {
             mouse.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
             raycaster.setFromCamera(mouse, camera);
@@ -106,28 +161,37 @@
 
             if (intersects.length > 0) {
                 const intersect = intersects[0];
-                // Move the red box to the targeted spot
+                
+                // TOOLTIP LOGIC: Show name if hovering over a block
+                if (intersect.object !== floorPlane) {
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (event.clientX + 15) + 'px';
+                    tooltip.style.top = (event.clientY + 15) + 'px';
+                    tooltip.innerText = intersect.object.userData.name; // Read block name
+                } else {
+                    tooltip.style.display = 'none';
+                }
+
+                // Move preview box
                 const normalObj = new THREE.Vector3().copy(intersect.face.normal);
                 rollOverMesh.position.copy(intersect.point).add(normalObj);
                 rollOverMesh.position.floor().addScalar(0.5);
                 rollOverMesh.visible = true;
             } else {
                 rollOverMesh.visible = false;
+                tooltip.style.display = 'none';
             }
         });
 
-        // Smart clicking logic (prevents dragging from placing blocks accidentally)
+        // Smart clicking
         let startX = 0, startY = 0;
         renderer.domElement.addEventListener('pointerdown', (e) => {
-            if (e.button !== 0) return; // Only track left clicks
-            startX = e.clientX; 
-            startY = e.clientY;
+            if (e.button !== 0) return; 
+            startX = e.clientX; startY = e.clientY;
         });
 
         renderer.domElement.addEventListener('pointerup', (event) => {
             if (event.button !== 0) return; 
-            
-            // If the mouse moved while clicking, you were dragging the camera. Abort placement!
             if (Math.abs(event.clientX - startX) > 5 || Math.abs(event.clientY - startY) > 5) return; 
 
             mouse.set((event.clientX / window.innerWidth) * 2 - 1, -(event.clientY / window.innerHeight) * 2 + 1);
@@ -138,51 +202,52 @@
                 const intersect = intersects[0];
                 
                 if (event.shiftKey) {
-                    // Delete Block
                     if (intersect.object !== floorPlane) {
                         scene.remove(intersect.object);
                         objects.splice(objects.indexOf(intersect.object), 1);
                         blockData = blockData.filter(b => b.mesh !== intersect.object);
                         rollOverMesh.visible = false; 
+                        tooltip.style.display = 'none';
                     }
                 } else {
-                    // Place Block
-                    const selectEl = document.getElementById('blockSelect');
                     const blockId = selectEl.value;
                     const blockColor = selectEl.options[selectEl.selectedIndex].dataset.color;
+                    const blockName = selectEl.options[selectEl.selectedIndex].dataset.name;
 
                     const voxelGeo = new THREE.BoxGeometry(1, 1, 1);
                     const voxelMat = new THREE.MeshLambertMaterial({ color: blockColor });
                     const voxel = new THREE.Mesh(voxelGeo, voxelMat);
                     
+                    // Save name to the 3D object so the tooltip can read it later!
+                    voxel.userData = { id: blockId, name: blockName };
+
                     const normalObj = new THREE.Vector3().copy(intersect.face.normal);
                     voxel.position.copy(intersect.point).add(normalObj).floor().addScalar(0.5);
                     scene.add(voxel);
                     objects.push(voxel);
 
+                    // We add +10 to X and Z to shift the coordinates back to 0-19 for Minecraft Export
                     blockData.push({
                         mesh: voxel,
-                        x: Math.floor(voxel.position.x),
+                        x: Math.floor(voxel.position.x) + 10,
                         y: Math.floor(voxel.position.y),
-                        z: Math.floor(voxel.position.z),
-                        id: blockId // Save the Minecraft name for Vercel
+                        z: Math.floor(voxel.position.z) + 10,
+                        id: blockId 
                     });
                 }
             }
         });
 
-        // Keep it looking nice if you resize the browser
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // 6. Export to Vercel Backend
+        // --- 5. EXPORT TO VERCEL ---
         document.getElementById('exportBtn').addEventListener('click', async () => {
             if (blockData.length === 0) return alert("Place some blocks first!");
 
-            // Send standard coordinates to the backend
             const payload = {
                 size: [20, 20, 20], 
                 blocks: blockData.map(b => ({ x: b.x, y: b.y, z: b.z, id: b.id }))
@@ -194,7 +259,7 @@
                 body: JSON.stringify(payload)
             });
 
-            if (!response.ok) return alert("Failed to export. Make sure your api/export.js file is pushed!");
+            if (!response.ok) return alert("Failed to export. Check Vercel logs.");
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -204,7 +269,6 @@
             a.click();
         });
 
-        // Let the 3D engine run
         function animate() {
             requestAnimationFrame(animate);
             renderer.render(scene, camera);
